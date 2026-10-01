@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::os::macos::raw::stat;
-use std::string;
-use std::time::Instant;
+use native_tls::TlsConnector;
+use native_tls::TlsStream;
 
 struct HttpResponse{
     status_code: u16,
@@ -11,26 +10,38 @@ struct HttpResponse{
     body: String,
 }
 
+
 fn main() {
 
-let address = "info.cern.ch:80";
+    let already_visited : HashSet<String> = HashSet::<String>::new();
 
-    crawl(address);
+    let address = "info.cern.ch:80";
 
-    
+    crawl(address, already_visited);
 }
 
-fn crawl(address: &str){
 
+fn crawl(address: &str, mut visited_sites: HashSet<String>){
+
+    if visited_sites.contains(address){
+        return
+    };
 
     match TcpStream::connect(&address) {
             Ok(stream) => {
-                println!("Yoho! Successfully conncted to {:?}", address);
-                println!("The peer: {}", stream.peer_addr().unwrap());
+                println!("\n\nYoho! Successfully conncted to {:?}", address);
 
-                let mut response = get_http_response(&stream, &address);
+                let _ = visited_sites.insert(address.to_string());
+                let response = get_http_response(&stream, &address);
+                let http_response_obj = parse_http_response(&response);
 
-                let http_response_obj = parse_http_response(&response, &stream);
+                println!("\n");
+                println!("STATUS: {:?}", http_response_obj.status_code);
+                println!("BODY: \n{:?}", http_response_obj.body);
+
+                if http_response_obj.status_code == 302 {
+                    println!("{:?}", http_response_obj.headers);
+                }
 
                 let additional_routes = get_linked_routes(&http_response_obj);
 
@@ -38,8 +49,7 @@ fn crawl(address: &str){
 
                 for next_route in additional_routes{
                     let address = next_route.to_string() + ":80";
-                    println!("{:?}", address);
-                    crawl(&address);
+                    crawl(&address, visited_sites.clone());
                  }
 
             }
@@ -67,7 +77,7 @@ fn get_http_response(mut stream: &TcpStream, address: &str) -> String {
 }
 
 
-fn parse_http_response(repsonse: &str, mut stream: &TcpStream) -> HttpResponse {
+fn parse_http_response(repsonse: &str) -> HttpResponse {
 
     let parts: Vec<&str> = repsonse.splitn(2,"\r\n\r\n").collect();
     let header_section = parts[0];
@@ -98,27 +108,22 @@ fn parse_http_response(repsonse: &str, mut stream: &TcpStream) -> HttpResponse {
 
 }
 
-fn get_linked_routes(responseObj : &HttpResponse) -> Vec<&str> {
+fn get_linked_routes(response_obj : &HttpResponse) -> Vec<&str> {
 
-    let body: &str = &responseObj.body;
+    let body: &str = &response_obj.body;
 
     let mut links: Vec<&str> = Vec::<&str>::new();
 
     for line in body.lines() {
         
-        if(line.contains("<a")){
-
-            println!("{:?}", line);
+        if line.contains("<a"){
 
             let sectioned: Vec<&str> = line.split("href").filter(|v| v.contains("http")).collect();
 
             for section in sectioned{
-                
-                print!("116: ");
-                println!("{:?}", section);
 
                 let (_, after_https) =  section
-                                .split_once(("https://"))
+                                .split_once("https://")
                                 .or_else( || section.split_once("http://"))
                                 .unwrap_or(("",""));
 
@@ -128,7 +133,6 @@ fn get_linked_routes(responseObj : &HttpResponse) -> Vec<&str> {
 
                 let (url, _rest) = url.split_once("/").unwrap_or(("",""));
 
-                println!("RESULT: {:?}", url);
 
                 links.push(url);
             }
