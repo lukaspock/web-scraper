@@ -13,7 +13,7 @@ struct HttpResponse{
 
 fn main() {
 
-    let address = "example.com:80";
+let address = "info.cern.ch:80";
 
     crawl(address);
 
@@ -117,7 +117,10 @@ fn get_linked_routes(responseObj : &HttpResponse) -> Vec<&str> {
                 print!("116: ");
                 println!("{:?}", section);
 
-                let (_, after_https) =  section.split_once("https://").unwrap_or(("",""));
+                let (_, after_https) =  section
+                                .split_once(("https://"))
+                                .or_else( || section.split_once("http://"))
+                                .unwrap_or(("",""));
 
                 println!("{:?}", after_https);
 
