@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+mini-redis = "0.4.1"
 native-tls = "0.2.18"
+tokio = "1.53.1"
+tokio-native-tls = "0.3.1"
