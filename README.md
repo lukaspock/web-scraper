@@ -4,10 +4,10 @@ A lightweight, custom-built web crawler written in Rust. This project was develo
 
 ## Features
 
-* **Raw TCP Streams:** Uses Rust's standard `std::net::TcpStream` to establish connections directly to port 80.
+* **Raw TCP Streams:** Uses Rust's standard `std::net::TcpStream` OR `tokio::net::TcpStream;` (for async) to establish connections directly to HTTPS.
 * **Manual HTTP Protocol:** Constructs and sends raw `GET` requests and manually parses the incoming HTTP headers and body.
 * **HTML Parsing:** Scans the response body for anchor tags (`<a href="...">`) to safely extract URLs, handling various quotation formats.
-* **Recursive Crawling:** Automatically queues and attempts to connect to newly discovered routes.
+* **Looped Crawling:** In main.rs there is a simple VecDeque, used to store all of the remaining urls. In the loop the main function keeps spawning new tasks to process all of the urls
 
 ## Prerequisites
 
@@ -22,12 +22,14 @@ A lightweight, custom-built web crawler written in Rust. This project was develo
 
 ## Build and run the Project
 
+* (Optional) change the target-URL in main.rs
 * cargo run
 
 * Note: The starting target address is currently hardcoded in main.rs.
 * Known Limitations & Educational Context
-* This scraper is built as an educational project to understand the underlying mechanics of the web. Because it uses raw HTTP over port 80 and lacks modern browser headers or TLS (HTTPS) support, it will likely be intercepted by Web Application Firewalls (like Cloudflare) or redirected by servers enforcing HTTPS.
+* This scraper is built as an educational project to understand the underlying mechanics of the web. The scrapper uses HTTPS BUT it will likely be intercepted by Web Application Firewalls (like Cloudflare) or redirected by servers enforcing HTTP.
 
 * Tech Stack
 Language: Rust
-Core Libraries: std::net::TcpStream, std::collections::HashMap, std::io::{Read, Write}
+
+
