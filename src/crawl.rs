@@ -6,7 +6,7 @@ use native_tls::TlsConnector;
 use native_tls::TlsStream;
 use std::error::Error;
 
-use crate::HttpResponse::HttpResponse;
+use crate::http_response::HttpResponse;
 
 
 pub fn start(address: &str) {

@@ -1,3 +1,4 @@
 pub mod crawl;
 pub mod crawl_async;
-pub mod HttpResponse;
+pub mod http_response;
+pub mod visited_site;

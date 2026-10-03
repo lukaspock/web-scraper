@@ -9,14 +9,14 @@ use std::collections::HashMap;
 use std::error::Error;
 
 
-use crate::HttpResponse::HttpResponse;
+use crate::http_response::HttpResponse;
 
-pub async fn crawl_async(address: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+pub async fn crawl_async(address: &str, path: &str) -> Result<(Vec<String>, Option<HttpResponse>), Box<dyn Error>> {
 
     let mut further_links = Vec::<String>::new();
 
     if !address.starts_with("quotes.toscrape.com") {
-        return Ok(further_links);
+        return Ok((further_links, None));
     }
 
     let stream = connect_to_domain(address).await.unwrap();
@@ -39,7 +39,7 @@ pub async fn crawl_async(address: &str, path: &str) -> Result<Vec<String>, Box<d
 
         further_links.push(new_address.to_string());
 
-        return Ok(further_links);
+        return Ok((further_links,None));
     }
 
     let additional_routes = get_linked_routes(&http_response_obj, &address).await;
@@ -49,7 +49,7 @@ pub async fn crawl_async(address: &str, path: &str) -> Result<Vec<String>, Box<d
     }
 
 
-    Ok(further_links)
+    Ok((further_links, Some(http_response_obj)))
 }
 
 
