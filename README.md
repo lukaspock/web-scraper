@@ -1,4 +1,4 @@
-# web-scrapper
+# web-scraper
 
 A lightweight, custom-built web crawler written in Rust. This project was developed from scratch to explore network programming, focusing on raw TCP connections, manual HTTP request generation, and string parsing without relying on heavy third-party HTTP clients.
 
