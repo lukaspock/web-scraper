@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::result;
 use std::sync::{Arc, Mutex};
+use std::env;
 
 use dotenv::dotenv;
 use mongodb::bson::{self, Document};
@@ -31,8 +32,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let visited_sites_collection = db.collection::<bson::Document>("visited_sites");
 
+    
+    let args: Vec<String> = env::args().collect();
 
-    let address = "quotes.toscrape.com:443";
+    println!("{:?}", args);
+
+    let address = if args.len() > 1 {
+            args[1].clone()
+        } else {
+            String::from("quotes.toscrape.com:443")
+        };
 
     let visited_memory : SharedSet = Arc::new(Mutex::new(HashSet::<String>::new()));
     let url_queue: SharedDeque = Arc::new(Mutex::new(VecDeque::<String>::new()));
@@ -43,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         for site in previously_visited_sites {
-            println!("{}\n", site.url);
+            //println!("{}\n", site.url);
             visited_memory.lock().unwrap().insert(site.url);
         }
     }
