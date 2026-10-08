@@ -3,6 +3,7 @@ use axum::body;
 use axum::extract::State;
 use futures_util::stream::StreamExt;
 use mongodb::Collection;
+use web_scrapper::robots::RobotsCache;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
@@ -89,6 +90,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn start_crawling(State(state): State<AppState> , Json(payload): Json<PostPayload>){
     println!("Started Crawling!");
 
+    let client = reqwest::Client::new();
+    let mut robots_cache = RobotsCache::new();
+
     let visited_memory = state.visited_memory;
     let visited_collection = state.visited_sites_collection;
 
@@ -111,6 +115,13 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
         };
 
         if is_new {
+
+            if !robots_cache.is_allowed_url(&client, &url).await {
+                println!("DISSALLOWED: {} ", url );
+                continue;       
+            } 
+
+            println!("ALLOWED: {}", url);
 
             let url_queue_clone = Arc::clone(&url_queue);
             let visited_sites_collection_clone = visited_collection.clone();
