@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use robotstxt::DefaultMatcher;
 
+use crate::rate_limiter;
+
+
 #[derive(Default)]
 pub struct RobotsCache {
    pub cache: HashMap<String, String>
@@ -12,7 +15,7 @@ impl RobotsCache {
         Self{cache: HashMap::<String,String>::new()}
     }
 
-    pub async fn is_allowed_url(&mut self, client: &reqwest::Client, url: &str) -> bool {
+    pub async fn is_allowed_url(&mut self, client: &reqwest::Client, url: &str, limiter: &rate_limiter::RateLimiter) -> bool {
 
         println!("IS ALLOWED URL CALLED WITH: {}", url);
         let parsed_url = url::Url::parse(url).unwrap();
@@ -20,6 +23,9 @@ impl RobotsCache {
         let origin = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap());
 
         if(!self.cache.contains_key(&origin)){
+
+            limiter.wait(&origin).await;
+
             let robots_url = format!("{}/robots.txt", origin);
             let body = match client.get(&robots_url).send().await {
                 Ok(res) if res.status().is_success() => res.text().await.unwrap_or_default(),

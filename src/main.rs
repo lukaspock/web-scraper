@@ -3,6 +3,7 @@ use axum::body;
 use axum::extract::State;
 use futures_util::stream::StreamExt;
 use mongodb::Collection;
+use web_scrapper::rate_limiter::{self, RateLimiter};
 use web_scrapper::robots::RobotsCache;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -10,6 +11,7 @@ use std::error::Error;
 use std::result;
 
 use std::sync::{Arc};
+use std::time::Duration;
 use tokio::sync::{Mutex};
 use std::env;
 
@@ -21,6 +23,7 @@ use mongodb::{Client, options::ClientOptions};
 
 use web_scrapper::http_response::HttpResponse;
 use web_scrapper::visited_site::{self, VisitedSite};
+
 
 use axum::{
     extract::{Query, Json},
@@ -101,6 +104,8 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
     let url_queue: SharedDeque = Arc::new(Mutex::new(VecDeque::<String>::new()));
         url_queue.lock().await.push_back(address.to_string());
 
+    let rate_limiter = RateLimiter::new(Duration::from_secs(1));
+
     loop {
         let next: Option<String>;
         {
@@ -116,7 +121,7 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
 
         if is_new {
 
-            if !robots_cache.is_allowed_url(&client, &url).await {
+            if !robots_cache.is_allowed_url(&client, &url, &rate_limiter).await {
                 println!("DISSALLOWED: {} ", url );
                 continue;       
             } 
@@ -126,6 +131,8 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
             let url_queue_clone = Arc::clone(&url_queue);
             let visited_sites_collection_clone = visited_collection.clone();
 
+            let rate_limiter_clone = rate_limiter.clone();
+
             tokio::spawn(async move { 
 
                 let full_url = url.clone();
@@ -133,6 +140,8 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
                 let (url, path) = web_scrapper::crawl_async::split_into_domain_and_path(&url).await;
 
                 println!("\n url + path = {}{}", url, path);
+
+                rate_limiter_clone.wait(&url).await;
 
                 let (addtional_links, http_response ) = web_scrapper::crawl_async::crawl_async(&url, &path).await.unwrap_or((Vec::<String>::new(), None));
 
