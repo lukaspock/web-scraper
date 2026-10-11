@@ -13,6 +13,7 @@ use std::result;
 use std::sync::{Arc};
 use std::time::Duration;
 use tokio::sync::{Mutex};
+use tokio::task::JoinSet;
 use std::env;
 
 use dotenv::dotenv;
@@ -106,13 +107,20 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
 
     let rate_limiter = RateLimiter::new(Duration::from_secs(1));
 
+    let mut tasks = JoinSet::new();
+
     loop {
         let next: Option<String>;
         {
             next = url_queue.lock().await.pop_front();
         }
 
-        let Some(url) = next else { continue; };
+        let Some(url) = next else { 
+            if tasks.join_next().await.is_none() {
+                break;
+            }
+            continue;
+         };
 
         let is_new = {
             let mut visited = visited_memory.lock().await;
@@ -133,7 +141,7 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
 
             let rate_limiter_clone = rate_limiter.clone();
 
-            tokio::spawn(async move { 
+            tasks.spawn(async move { 
 
                 let full_url = url.clone();
 
@@ -165,6 +173,8 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
         }
         
     }
+
+    println!("Crawling Finished!")
 
 }
 
