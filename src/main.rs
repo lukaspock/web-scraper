@@ -94,13 +94,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn start_crawling(State(state): State<AppState> , Json(payload): Json<PostPayload>){
     println!("Started Crawling!");
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent(web_scrapper::user_agent::header_value())
+        .build()
+        .unwrap();
     let mut robots_cache = RobotsCache::new();
 
     let visited_memory = state.visited_memory;
     let visited_collection = state.visited_sites_collection;
 
-    let address = payload.url;
+    let raw_address = payload.url.trim().to_string();
+    let with_scheme = if raw_address.contains("://") {
+        raw_address
+    } else {
+        format!("https://{}", raw_address)
+    };
+
+    let address = match url::Url::parse(&with_scheme) {
+        Ok(parsed) if parsed.host_str().is_some() => parsed.to_string(),
+        _ => {
+            println!("INVALID START URL: {}", with_scheme);
+            return;
+        }
+    };
+
+    println!("FIRST ADDRESS: {}", address);
 
     let url_queue: SharedDeque = Arc::new(Mutex::new(VecDeque::<String>::new()));
         url_queue.lock().await.push_back(address.to_string());
@@ -127,6 +145,10 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
             visited.insert(url.clone())
         };
 
+        if !is_new {
+            println!("ALREADY VISITED: {}", url);
+        }
+
         if is_new {
 
             if !robots_cache.is_allowed_url(&client, &url, &rate_limiter).await {
@@ -140,18 +162,26 @@ async fn start_crawling(State(state): State<AppState> , Json(payload): Json<Post
             let visited_sites_collection_clone = visited_collection.clone();
 
             let rate_limiter_clone = rate_limiter.clone();
+            let client_clone = client.clone();
 
             tasks.spawn(async move { 
 
                 let full_url = url.clone();
 
-                let (url, path) = web_scrapper::crawl_async::split_into_domain_and_path(&url).await;
+                let origin = url::Url::parse(&url)
+                    .ok()
+                    .and_then(|u| u.host_str().map(|h| format!("{}://{}", u.scheme(), h)))
+                    .unwrap_or_else(|| url.clone());
 
-                println!("\n url + path = {}{}", url, path);
+                rate_limiter_clone.wait(&origin).await;
 
-                rate_limiter_clone.wait(&url).await;
-
-                let (addtional_links, http_response ) = web_scrapper::crawl_async::crawl_async(&url, &path).await.unwrap_or((Vec::<String>::new(), None));
+                let (addtional_links, http_response) = match web_scrapper::crawl_async::crawl_async(&client_clone, &url).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        println!("CRAWL ERROR for {}: {}", full_url, e);
+                        (Vec::<String>::new(), None)
+                    }
+                };
 
                 //println!("\n\n\n{:?}", addtional_links);
 

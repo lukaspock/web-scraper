@@ -17,15 +17,13 @@ use crate::http_response::HttpResponse;
 
 // SWITCHED FORM COMPLETLY FROM SRATCH VIA TCP SCTREAMS TO REQWEST TO SOLVE PORT AND HTTP/HTTPS ISSUES
 
-pub async fn crawl_async(address: &str, path: &str) -> Result<(Vec<String>, Option<HttpResponse>), Box<dyn Error>> {
+pub async fn crawl_async(client: &reqwest::Client, full_url: &str) -> Result<(Vec<String>, Option<HttpResponse>), Box<dyn Error>> {
 
     let mut further_links = Vec::<String>::new();
 
-    println!("\n\nSuccessfully conncted to {:?}", address);
+    println!("\n\nFetching {}", full_url);
 
-    let full_url = format!("{}{}", address, path);
-
-   let http_response_obj = get_http_response( &full_url).await?;
+    let http_response_obj = get_http_response(client, full_url).await?;
 
     if http_response_obj.status_code == 302 {
         let new_address = match http_response_obj.headers.get("location") {
@@ -38,7 +36,7 @@ pub async fn crawl_async(address: &str, path: &str) -> Result<(Vec<String>, Opti
         return Ok((further_links,None));
     }
 
-    let additional_routes = get_linked_routes(&http_response_obj, &full_url).await;
+    let additional_routes = get_linked_routes(&http_response_obj, full_url).await;
 
     for route in additional_routes {
         further_links.push(route);
@@ -71,7 +69,7 @@ async fn connect_to_domain(address: &str) -> Result<tokio_native_tls::TlsStream<
 }
 */
 
-async fn get_http_response(url: &str) -> Result<HttpResponse, Box<dyn Error>> {
+async fn get_http_response(client: &reqwest::Client, url: &str) -> Result<HttpResponse, Box<dyn Error>> {
 /* 
     let safe_path = if path.starts_with('/') {
         path.to_string()
@@ -97,7 +95,7 @@ async fn get_http_response(url: &str) -> Result<HttpResponse, Box<dyn Error>> {
 
     let response = String::from_utf8_lossy(&buf).to_string();
 */
-    let response = reqwest::get("https://quotes.toscrape.com").await?;
+    let response = client.get(url).send().await?;
 
     let status_code: u16 = response.status().as_u16();
     let mut headers: HashMap<String,String> = HashMap::<String,String>::new();
@@ -149,45 +147,34 @@ async fn parse_http_response(repsonse: &str) -> HttpResponse {
 }
 */
 
-async fn get_linked_routes(response_obj : &HttpResponse, domain : &str) -> Vec<String> {
+async fn get_linked_routes(response_obj : &HttpResponse, base_url : &str) -> Vec<String> {
 
-    let body: &str = &response_obj.body;
+    let Ok(base) = url::Url::parse(base_url) else {
+        return Vec::new();
+    };
 
     let mut links: Vec<String> = Vec::<String>::new();
 
-    for line in body.lines() {
-        
-        if line.contains("<a"){
+    for section in response_obj.body.split("href=").skip(1) {
 
-            let sectioned: Vec<&str> = line.split("href=").filter(|v| v.contains("http")).collect();
+        let mut chars = section.chars();
 
-            for section in sectioned{
+        let quote = match chars.next() {
+            Some(q @ ('"' | '\'')) => q,
+            _ => continue,
+        };
 
-                if section.is_empty() {
-                    continue;
-                }
+        let Some(raw) = chars.as_str().split(quote).next() else { continue; };
 
-                let (url, _rest) = section.split_once(">").unwrap_or(("",""));
-                let url = url.trim_matches('"').trim_matches('\'');
+        let Ok(mut resolved) = base.join(raw.trim()) else { continue; };
 
-                links.push(url.to_string());
-            }
-
-            let local_refs: Vec<&str> = line.split("href\"").filter(|v| !v.contains("http")).collect();
-
-            for local_ref in local_refs {
-
-
-            if let Some(path) = local_ref.split('"').nth(1) {
-                if path.starts_with('/') {
-
-                    let new_path = format!("{}{}", domain, path);
-
-                    links.push(new_path)
-                }
-            }
-}
+        if resolved.scheme() != "http" && resolved.scheme() != "https" {
+            continue;
         }
+
+        resolved.set_fragment(None);
+
+        links.push(resolved.to_string());
     }
 
     links
