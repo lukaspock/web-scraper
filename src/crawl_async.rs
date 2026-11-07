@@ -1,24 +1,31 @@
-
 use axum::http::response;
+use mongodb::atlas_search::Relation::Contains;
 use serde::de::value;
+use std::collections::HashMap;
+use std::ops::Add;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_native_tls::TlsConnector;
 use tokio_native_tls::TlsStream;
-use std::collections::HashMap;
 
 use std::error::Error;
 use std::fmt::format;
 
 use robotstxt::DefaultMatcher;
 
+use crate::crawl_async::State::InsideBraces;
+use crate::crawl_async::State::InsideScriptTag;
+use crate::crawl_async::State::InsideStyleTag;
+use crate::crawl_async::State::IsValidText;
 use crate::http_response::HttpResponse;
 
 // SWITCHED FORM COMPLETLY FROM SRATCH VIA TCP SCTREAMS TO REQWEST TO SOLVE PORT AND HTTP/HTTPS ISSUES
 
-pub async fn crawl_async(client: &reqwest::Client, full_url: &str) -> Result<(Vec<String>, Option<HttpResponse>), Box<dyn Error>> {
-
+pub async fn crawl_async(
+    client: &reqwest::Client,
+    full_url: &str,
+) -> Result<(Vec<String>, Option<HttpResponse>), Box<dyn Error>> {
     let mut further_links = Vec::<String>::new();
 
     println!("\n\nFetching {}", full_url);
@@ -28,12 +35,12 @@ pub async fn crawl_async(client: &reqwest::Client, full_url: &str) -> Result<(Ve
     if http_response_obj.status_code == 302 {
         let new_address = match http_response_obj.headers.get("location") {
             Some(loc) => loc,
-            None => ""
+            None => "",
         };
 
         further_links.push(new_address.to_string());
 
-        return Ok((further_links,None));
+        return Ok((further_links, None));
     }
 
     let additional_routes = get_linked_routes(&http_response_obj, full_url).await;
@@ -42,12 +49,10 @@ pub async fn crawl_async(client: &reqwest::Client, full_url: &str) -> Result<(Ve
         further_links.push(route);
     }
 
-
     Ok((further_links, Some(http_response_obj)))
 }
 
-
-/* 
+/*
 async fn connect_to_domain(address: &str) -> Result<tokio_native_tls::TlsStream<TcpStream>, Box<dyn Error>> {
     // Falls das address-Argument keinen Port enthält, hängen wir standardmäßig :443 an
     let full_address = if address.contains(':') {
@@ -69,52 +74,59 @@ async fn connect_to_domain(address: &str) -> Result<tokio_native_tls::TlsStream<
 }
 */
 
-async fn get_http_response(client: &reqwest::Client, url: &str) -> Result<HttpResponse, Box<dyn Error>> {
-/* 
-    let safe_path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{}", path)
-    };
+async fn get_http_response(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<HttpResponse, Box<dyn Error>> {
+    /*
+        let safe_path = if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path)
+        };
 
 
-    let domain = address.split(':').next().unwrap_or(address);
+        let domain = address.split(':').next().unwrap_or(address);
 
-    let buffer = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\nConnection: close\r\n\r\n", 
-        safe_path,
-        domain
-    );
+        let buffer = format!(
+            "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\nConnection: close\r\n\r\n",
+            safe_path,
+            domain
+        );
 
 
-    stream.write_all(buffer.as_bytes()).await.unwrap();
+        stream.write_all(buffer.as_bytes()).await.unwrap();
 
-    let mut buf = Vec::<u8>::new();
+        let mut buf = Vec::<u8>::new();
 
-    stream.read_to_end(&mut buf).await.unwrap();
+        stream.read_to_end(&mut buf).await.unwrap();
 
-    let response = String::from_utf8_lossy(&buf).to_string();
-*/
+        let response = String::from_utf8_lossy(&buf).to_string();
+    */
     let response = client.get(url).send().await?;
 
     let status_code: u16 = response.status().as_u16();
-    let mut headers: HashMap<String,String> = HashMap::<String,String>::new();
+    let mut headers: HashMap<String, String> = HashMap::<String, String>::new();
 
-    for  (name, value) in response.headers() {
+    for (name, value) in response.headers() {
         let k = name.to_string();
         let v = value.to_str()?.to_string();
-        headers.insert(k,v);
+        headers.insert(k, v);
     }
 
     let body: String = response.text().await?;
 
-    Ok(
-        HttpResponse { status_code, headers, body}
-    )
-    
+    let filtered_body = get_filtered_body(&body).await;
+
+    Ok(HttpResponse {
+        status_code,
+        headers,
+        body,
+        filtered_body,
+    })
 }
 
-/* 
+/*
 async fn parse_http_response(repsonse: &str) -> HttpResponse {
 
     let parts: Vec<&str> = repsonse.splitn(2,"\r\n\r\n").collect();
@@ -138,17 +150,77 @@ async fn parse_http_response(repsonse: &str) -> HttpResponse {
 
     };
 
-    HttpResponse { 
-        status_code, 
-        headers, 
-        body: body_section.to_string() 
+    HttpResponse {
+        status_code,
+        headers,
+        body: body_section.to_string()
     }
 
 }
 */
 
-async fn get_linked_routes(response_obj : &HttpResponse, base_url : &str) -> Vec<String> {
+#[derive(PartialEq)]
+enum State {
+    InsideBraces,
+    InsideStyleTag,
+    InsideScriptTag,
+    IsValidText,
+}
 
+async fn get_filtered_body(body: &str) -> String {
+    let mut result: String = String::new();
+    let mut filtered = String::new();
+
+    let mut current_state: State = State::IsValidText;
+    let mut prev_chars = String::new();
+
+    for line in body.lines() {
+        for char in line.chars() {
+            if current_state == State::InsideStyleTag || current_state == State::InsideScriptTag {
+                prev_chars.push(char);
+                if prev_chars.ends_with("</style>") || prev_chars.ends_with("</script>") {
+                    current_state = State::IsValidText;
+                    prev_chars.clear();
+                }
+                continue;
+            }
+            if char == '<' {
+                current_state = State::InsideBraces;
+                continue;
+            }
+            if char == '>' {
+                let name = prev_chars.split_whitespace().next();
+
+                current_state = match name {
+                    Some("style") => State::InsideStyleTag,
+                    Some("script") => State::InsideScriptTag,
+                    _ => State::IsValidText,
+                };
+
+                if current_state == State::InsideScriptTag || current_state == State::InsideStyleTag
+                {
+                    continue;
+                }
+
+                prev_chars.clear();
+                continue;
+            }
+
+            match current_state {
+                State::InsideBraces => prev_chars.push(char),
+                State::IsValidText => filtered.push(char),
+                _ => continue,
+            }
+        }
+
+        println!("{}", &filtered);
+        result += &filtered;
+    }
+
+    result
+}
+
+async fn get_linked_routes(response_obj: &HttpResponse, base_url: &str) -> Vec<String> {
     let Ok(base) = url::Url::parse(base_url) else {
         return Vec::new();
     };
@@ -156,7 +228,6 @@ async fn get_linked_routes(response_obj : &HttpResponse, base_url : &str) -> Vec
     let mut links: Vec<String> = Vec::<String>::new();
 
     for section in response_obj.body.split("href=").skip(1) {
-
         let mut chars = section.chars();
 
         let quote = match chars.next() {
@@ -164,9 +235,13 @@ async fn get_linked_routes(response_obj : &HttpResponse, base_url : &str) -> Vec
             _ => continue,
         };
 
-        let Some(raw) = chars.as_str().split(quote).next() else { continue; };
+        let Some(raw) = chars.as_str().split(quote).next() else {
+            continue;
+        };
 
-        let Ok(mut resolved) = base.join(raw.trim()) else { continue; };
+        let Ok(mut resolved) = base.join(raw.trim()) else {
+            continue;
+        };
 
         if resolved.scheme() != "http" && resolved.scheme() != "https" {
             continue;
@@ -178,10 +253,9 @@ async fn get_linked_routes(response_obj : &HttpResponse, base_url : &str) -> Vec
     }
 
     links
-
 }
 
-pub async fn split_into_domain_and_path(address: &str) -> (&str, &str){
+pub async fn split_into_domain_and_path(address: &str) -> (&str, &str) {
     let (pure_domain, path) = address.split_once('/').unwrap_or_else(|| (address, "/"));
 
     (pure_domain, path)

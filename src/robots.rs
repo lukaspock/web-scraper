@@ -24,7 +24,7 @@ impl RobotsCache {
 
         if(!self.cache.contains_key(&origin)){
 
-            limiter.wait(&origin).await;
+            limiter.wait(&rate_limiter::rate_limit_key(url)).await;
 
             let robots_url = format!("{}/robots.txt", origin);
             let body = match client.get(&robots_url).send().await {

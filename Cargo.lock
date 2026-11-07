@@ -3100,6 +3100,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-native-tls",
+ "tower-http",
  "url",
 ]
 

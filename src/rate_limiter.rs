@@ -30,3 +30,23 @@ impl RateLimiter {
         sleep_until(my_slot).await;
     }
 }
+
+/// Key under which requests to `url` share one rate limit: the last two labels of the host
+/// (`de.wikipedia.org` and `en.wikipedia.org` both become `wikipedia.org`).
+/// Simplification: multi-part suffixes like `co.uk` are not recognized.
+pub fn rate_limit_key(url: &str) -> String {
+    let Some(host) = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)) else {
+        return url.to_string();
+    };
+
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return host;
+    }
+
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() <= 2 {
+        return host;
+    }
+
+    labels[labels.len() - 2..].join(".")
+}
