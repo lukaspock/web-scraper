@@ -22,31 +22,37 @@ function App() {
     });
 
     return (
-        <>
-            <div id="center">
-                <h1>Welcome to Ruggle!</h1>
+        <div className="app">
+            <br />
+            <h1>Ruggle</h1>
+            <br />
+            <form
+                className="search"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    setSubmitedValue(searchInput);
+                }}
+            >
                 <input
                     type="text"
+                    placeholder="Search…"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
-                ></input>
-                <button
-                    type="button"
-                    onClick={() => setSubmitedValue(searchInput)}
-                >
-                    Search
-                </button>
-            </div>
+                />
+                <button type="submit">Search</button>
+            </form>
 
-            <div id="center">
+            <div className="results">
+                {isLoading && <p className="status">Searching…</p>}
+                {error && <p className="status">{error.message}</p>}
                 {data?.map((d: SearchResult) => (
-                    <div key={d.url}>
-                        {d.title && <h1>{d.title}</h1>}
-                        <a href={d.url}>{d.url}</a>
-                    </div>
+                    <a className="result" key={d.url} href={d.url}>
+                        {d.title && <h2>{d.title}</h2>}
+                        <span className="url">{d.url}</span>
+                    </a>
                 ))}
             </div>
-        </>
+        </div>
     );
 }
 
