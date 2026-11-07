@@ -48,6 +48,12 @@ A lightweight web crawler written in Rust with full-text search, controlled thro
     ```
     Vite prints the local URL (usually `http://localhost:5173`).
 
+Preview:
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/dc45cd1a-19a5-47f5-90d1-7620d4609208" />
+
+
+
 ## API
 
 ### `POST /`: start a crawl
